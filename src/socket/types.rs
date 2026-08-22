@@ -110,10 +110,10 @@ impl Socket {
         Ok(true)
     }
 
-    pub fn notify_disconnect_now(meta: Arc<SocketMetadata>, reason: String) {
+    pub fn notify_disconnect_now(meta: Arc<SocketMetadata>, reason: String, code: u16) {
         meta.state.set(SocketState::Disconnected);
         if meta.mark_disconnect_notified() {
-            handler::queue_disconnect(meta.id, reason);
+            handler::queue_disconnect(meta.id, reason, code);
         }
     }
 }

@@ -33,7 +33,7 @@ fn close_now(_: &State, this: UserDataRef<Socket>) -> lua::Result<()> {
         .send(SocketCommand::CloseNow)
         .map_err(|err| lua::Error::Runtime(format!("failed to close connection ({err})").into()))?;
 
-    Socket::notify_disconnect_now(socket.meta.clone(), "closed by user".to_string());
+    Socket::notify_disconnect_now(socket.meta.clone(), "closed by user".to_string(), 1000);
     Ok(())
 }
 

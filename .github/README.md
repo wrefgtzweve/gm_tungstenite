@@ -35,8 +35,8 @@ function ws:on_error(err)
 end
 
 -- callback: disconnected
-function ws:on_disconnect(reason)
-    print("Disconnected:", reason)
+function ws:on_disconnect(reason, code)
+    print("Disconnected:", reason, code)
 end
 
 -- send message to server
@@ -88,7 +88,7 @@ called when a text message is received from the server
 
 called when an error occurs
 
-### `tungstenite:on_disconnect(string message)`
+### `tungstenite:on_disconnect(string reason, number code)`
 
 called when the connection is closed. whenever `on_disconnect` is called, socket should be considered as closed
 

@@ -78,14 +78,31 @@ fn queue_callback(id: Uuid, name: &'static str, data: Option<String>) {
     });
 }
 
-pub fn queue_disconnect(id: Uuid, reason: String) {
-    queue_callback(id, "on_disconnect", Some(reason));
+pub fn queue_disconnect(id: Uuid, reason: String, code: u16) {
+    next_tick(move |l| {
+        if is_closed() {
+            return;
+        }
+
+        let Some(target) = get_target(id) else {
+            return;
+        };
+
+        let func = match target.get::<Function>(l, "on_disconnect") {
+            Ok(func) => func,
+            Err(_) => return,
+        };
+
+        if let Err(err) = func.call::<()>(l, (target.clone(), reason, code)) {
+            l.error_no_halt_with_stack(&err.to_string());
+        }
+    });
 }
 
-fn notify_disconnect(meta: &Arc<SocketMetadata>, reason: impl Into<String>) {
+fn notify_disconnect(meta: &Arc<SocketMetadata>, reason: impl Into<String>, code: u16) {
     meta.state.set(SocketState::Disconnected);
     if meta.mark_disconnect_notified() {
-        queue_disconnect(meta.id, reason.into());
+        queue_disconnect(meta.id, reason.into(), code);
     }
 }
 
@@ -101,7 +118,7 @@ async fn handle_socket(mut receiver: mpsc::UnboundedReceiver<SocketCommand>, id:
     let (stream, _) = match connection {
         Ok(parts) => parts,
         Err(err) => {
-            notify_disconnect(&meta, format!("connect failed: {err}"));
+            notify_disconnect(&meta, format!("connect failed: {err}"), 1006);
             queue_callback(id, "on_error", Some(err.to_string()));
             return;
         }
@@ -115,18 +132,18 @@ async fn handle_socket(mut receiver: mpsc::UnboundedReceiver<SocketCommand>, id:
     heartbeat.set_missed_tick_behavior(MissedTickBehavior::Delay);
     heartbeat.tick().await;
 
-    let disconnect_reason = loop {
+    let (disconnect_reason, disconnect_code) = loop {
         tokio::select! {
             maybe_command = receiver.recv() => {
                 let Some(command) = maybe_command else {
-                    break "socket command channel closed".to_string();
+                    break ("socket command channel closed".to_string(), 1006);
                 };
 
                 match command {
                     SocketCommand::Send(data) => {
                         if let Err(err) = writer.send(Message::Text(data.into())).await {
                             queue_callback(id, "on_error", Some(err.to_string()));
-                            break format!("write failed: {err}");
+                            break (format!("write failed: {err}"), 1006);
                         }
                     }
                     SocketCommand::Close => {
@@ -137,20 +154,20 @@ async fn handle_socket(mut receiver: mpsc::UnboundedReceiver<SocketCommand>, id:
 
                         if let Err(err) = writer.send(Message::Close(Some(frame))).await {
                             queue_callback(id, "on_error", Some(err.to_string()));
-                            break format!("close failed: {err}");
+                            break (format!("close failed: {err}"), 1006);
                         }
 
-                        break "closed by user".to_string();
+                        break ("closed by user".to_string(), 1000);
                     }
                     SocketCommand::CloseNow => {
                         let _ = writer.close().await;
-                        break "closed by user".to_string();
+                        break ("closed by user".to_string(), 1000);
                     }
                 }
             }
             maybe_message = reader.next() => {
                 let Some(message) = maybe_message else {
-                    break "connection closed".to_string();
+                    break ("connection closed".to_string(), 1006);
                 };
 
                 match message {
@@ -163,18 +180,26 @@ async fn handle_socket(mut receiver: mpsc::UnboundedReceiver<SocketCommand>, id:
                     Ok(Message::Ping(data)) => {
                         if let Err(err) = writer.send(Message::Pong(data)).await {
                             queue_callback(id, "on_error", Some(err.to_string()));
-                            break format!("pong failed: {err}");
+                            break (format!("pong failed: {err}"), 1006);
                         }
                     }
                     Ok(Message::Close(frame)) => {
-                        break frame
-                            .map(|frame| frame.reason.to_string())
-                            .filter(|reason| !reason.is_empty())
-                            .unwrap_or_else(|| "connection closed".to_string());
+                        let (reason, code) = match frame {
+                            Some(frame) => {
+                                let reason = if frame.reason.is_empty() {
+                                    "connection closed".to_string()
+                                } else {
+                                    frame.reason.to_string()
+                                };
+                                (reason, u16::from(frame.code))
+                            }
+                            None => ("connection closed".to_string(), 1000),
+                        };
+                        break (reason, code);
                     }
                     Err(err) => {
                         queue_callback(id, "on_error", Some(err.to_string()));
-                        break format!("read failed: {err}");
+                        break (format!("read failed: {err}"), 1006);
                     }
                     _ => {}
                 }
@@ -182,11 +207,11 @@ async fn handle_socket(mut receiver: mpsc::UnboundedReceiver<SocketCommand>, id:
             _ = heartbeat.tick() => {
                 if let Err(err) = writer.send(Message::Ping(Vec::new().into())).await {
                     queue_callback(id, "on_error", Some(err.to_string()));
-                    break format!("heartbeat failed: {err}");
+                    break (format!("heartbeat failed: {err}"), 1006);
                 }
             }
         }
     };
 
-    notify_disconnect(&meta, disconnect_reason);
+    notify_disconnect(&meta, disconnect_reason, disconnect_code);
 }

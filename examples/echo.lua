@@ -12,8 +12,8 @@ end
 function conn:on_error(err)
   print("error:", err)
 end
-function conn:on_disconnect(reason)
-  print("disconnected (", reason, ")")
+function conn:on_disconnect(reason, code)
+  print("disconnected (", reason, code, ")")
 end
 
 print(conn) -- "tungstenite (uuidv4)"
