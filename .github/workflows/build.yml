@@ -25,12 +25,12 @@ jobs:
             binary_path: target/x86_64-pc-windows-msvc/release/gm_tungstenite.dll
 
           - target: i686-unknown-linux-gnu
-            os: ubuntu-latest
+            os: ubuntu-22.04
             artifact_name: gmsv_tungstenite_linux.dll
             binary_path: target/i686-unknown-linux-gnu/release/libgm_tungstenite.so
 
           - target: x86_64-unknown-linux-gnu
-            os: ubuntu-latest
+            os: ubuntu-22.04
             artifact_name: gmsv_tungstenite_linux64.dll
             binary_path: target/x86_64-unknown-linux-gnu/release/libgm_tungstenite.so
 
