@@ -65,7 +65,10 @@ jobs:
       - name: Rust Cache
         uses: Swatinem/rust-cache@v2
         with:
-          key: ${{ matrix.target }}
+          # Include the runner image so caches from newer glibc (e.g. ubuntu-24.04)
+          # are not restored onto ubuntu-22.04. prefix-key bump drops the poisoned cache.
+          prefix-key: v1-rust
+          key: ${{ matrix.target }}-${{ matrix.os }}
 
       - name: Build release binary
         run: cargo build --release --target ${{ matrix.target }}
